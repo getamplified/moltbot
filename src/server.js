@@ -1,3 +1,4 @@
+import "dotenv/config";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -200,14 +201,14 @@ function requireSetupAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, encoded] = header.split(" ");
   if (scheme !== "Basic" || !encoded) {
-    res.set("WWW-Authenticate", 'Basic realm="Moltbot Setup"');
+    res.set("WWW-Authenticate", 'Basic realm="NiftyBot Setup"');
     return res.status(401).send("Auth required");
   }
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
   const idx = decoded.indexOf(":");
   const password = idx >= 0 ? decoded.slice(idx + 1) : "";
   if (password !== SETUP_PASSWORD) {
-    res.set("WWW-Authenticate", 'Basic realm="Moltbot Setup"');
+    res.set("WWW-Authenticate", 'Basic realm="NiftyBot Setup"');
     return res.status(401).send("Invalid password");
   }
   return next();
@@ -235,7 +236,7 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Moltbot Setup</title>
+  <title>NiftyBot Setup</title>
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 2rem; max-width: 900px; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
@@ -247,14 +248,14 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
   </style>
 </head>
 <body>
-  <h1>Moltbot Setup</h1>
-  <p class="muted">This wizard configures Moltbot by running the same onboarding command it uses in the terminal, but from the browser.</p>
+  <h1>NiftyBot Setup</h1>
+  <p class="muted">This wizard configures NiftyBot by running the same onboarding command it uses in the terminal, but from the browser.</p>
 
   <div class="card">
     <h2>Status</h2>
     <div id="status">Loading...</div>
     <div style="margin-top: 0.75rem">
-      <a href="/moltbot" target="_blank">Open Moltbot UI</a>
+      <a href="/moltbot" target="_blank">Open NiftyBot UI</a>
       &nbsp;|&nbsp;
       <a href="/setup/export" target="_blank">Download backup (.tar.gz)</a>
     </div>
@@ -282,7 +283,7 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
 
   <div class="card">
     <h2>2) Optional: Channels</h2>
-    <p class="muted">You can also add channels later inside Moltbot, but this helps you get messaging working immediately.</p>
+    <p class="muted">You can also add channels later inside NiftyBot, but this helps you get messaging working immediately.</p>
 
     <label>Telegram bot token (optional)</label>
     <input id="telegramToken" type="password" placeholder="123456:ABC..." />
@@ -310,7 +311,7 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
     <button id="pairingApprove" style="background:#1f2937; margin-left:0.5rem">Approve pairing</button>
     <button id="reset" style="background:#444; margin-left:0.5rem">Reset setup</button>
     <pre id="log" style="white-space:pre-wrap"></pre>
-    <p class="muted">Reset deletes the Moltbot config file so you can rerun onboarding. Pairing approval lets you grant DM access when dmPolicy=pairing.</p>
+    <p class="muted">Reset deletes the NiftyBot config file so you can rerun onboarding. Pairing approval lets you grant DM access when dmPolicy=pairing.</p>
   </div>
 
   <script src="/setup/app.js"></script>
@@ -493,6 +494,102 @@ function buildOnboardArgs(payload) {
   }
 
   return args;
+}
+
+// Auto-configure from env vars at boot (bypasses /setup when OPENAI_API_KEY etc. are set).
+async function autoConfigureFromEnv() {
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!openaiKey) return false;
+  if (isConfigured()) return false;
+
+  console.log("[auto-config] Configuring from environment variables...");
+
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+
+  const payload = {
+    flow: "quickstart",
+    authChoice: "openai-api-key",
+    authSecret: openaiKey,
+    telegramToken: process.env.TELEGRAM_BOT_TOKEN?.trim() || "",
+    slackBotToken: process.env.SLACK_BOT_TOKEN?.trim() || "",
+    slackAppToken: process.env.SLACK_APP_TOKEN?.trim() || "",
+  };
+
+  const onboardArgs = buildOnboardArgs(payload);
+  const onboard = await runCmd(MOLTBOT_NODE, clawArgs(onboardArgs));
+
+  if (onboard.code !== 0 || !isConfigured()) {
+    console.error("[auto-config] Onboarding failed:", onboard.output);
+    return false;
+  }
+
+  // Set gateway config (same as setup wizard).
+  await runCmd(MOLTBOT_NODE, clawArgs(["config", "set", "gateway.mode", "local"]));
+  await runCmd(
+    MOLTBOT_NODE,
+    clawArgs(["config", "set", "gateway.auth.mode", "token"]),
+  );
+  await runCmd(
+    MOLTBOT_NODE,
+    clawArgs(["config", "set", "gateway.auth.token", MOLTBOT_GATEWAY_TOKEN]),
+  );
+  await runCmd(
+    MOLTBOT_NODE,
+    clawArgs(["config", "set", "gateway.bind", "loopback"]),
+  );
+  await runCmd(
+    MOLTBOT_NODE,
+    clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]),
+  );
+  await runCmd(
+    MOLTBOT_NODE,
+    clawArgs(["config", "set", "gateway.controlUi.allowInsecureAuth", "true"]),
+  );
+
+  // Write channel configs from env.
+  if (payload.telegramToken) {
+    const cfgObj = {
+      enabled: true,
+      dmPolicy: "pairing",
+      botToken: payload.telegramToken,
+      groupPolicy: "allowlist",
+      streamMode: "partial",
+    };
+    await runCmd(
+      MOLTBOT_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "--json",
+        "channels.telegram",
+        JSON.stringify(cfgObj),
+      ]),
+    );
+    console.log("[auto-config] Telegram channel configured from TELEGRAM_BOT_TOKEN");
+  }
+
+  if (payload.slackBotToken || payload.slackAppToken) {
+    const cfgObj = {
+      enabled: true,
+      botToken: payload.slackBotToken || undefined,
+      appToken: payload.slackAppToken || undefined,
+    };
+    await runCmd(
+      MOLTBOT_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "--json",
+        "channels.slack",
+        JSON.stringify(cfgObj),
+      ]),
+    );
+    console.log("[auto-config] Slack channel configured from SLACK_BOT_TOKEN / SLACK_APP_TOKEN");
+  }
+
+  console.log("[auto-config] Configuration complete.");
+  return true;
 }
 
 function runCmd(cmd, args, opts = {}) {
@@ -761,7 +858,7 @@ app.get("/setup/export", requireSetupAuth, async (_req, res) => {
   res.setHeader("content-type", "application/gzip");
   res.setHeader(
     "content-disposition",
-    `attachment; filename="moltbot-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
+    `attachment; filename="niftybot-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
   );
 
   // Prefer exporting from a common /data root so archives are easy to inspect and restore.
@@ -847,26 +944,42 @@ app.use(async (req, res) => {
 });
 
 // Create HTTP server from Express app
-const server = app.listen(PORT, () => {
-  console.log(`[wrapper] listening on port ${PORT}`);
-  console.log(`[wrapper] setup wizard: http://localhost:${PORT}/setup`);
-  console.log(`[wrapper] configured: ${isConfigured()}`);
-});
+async function startServer() {
+  // Auto-configure from env vars if OPENAI_API_KEY is set and not yet configured.
+  if (!isConfigured() && process.env.OPENAI_API_KEY?.trim()) {
+    try {
+      await autoConfigureFromEnv();
+    } catch (err) {
+      console.error("[auto-config] Error:", err);
+    }
+  }
 
-// Handle WebSocket upgrades
-server.on("upgrade", async (req, socket, head) => {
-  if (!isConfigured()) {
-    socket.destroy();
-    return;
-  }
-  try {
-    await ensureGatewayRunning();
-  } catch {
-    socket.destroy();
-    return;
-  }
-  // Proxy WebSocket upgrade (auth token injected via proxyReqWs event)
-  proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
+  const server = app.listen(PORT, () => {
+    console.log(`[wrapper] listening on port ${PORT}`);
+    console.log(`[wrapper] setup wizard: http://localhost:${PORT}/setup`);
+    console.log(`[wrapper] configured: ${isConfigured()}`);
+  });
+
+  // Handle WebSocket upgrades
+  server.on("upgrade", async (req, socket, head) => {
+    if (!isConfigured()) {
+      socket.destroy();
+      return;
+    }
+    try {
+      await ensureGatewayRunning();
+    } catch {
+      socket.destroy();
+      return;
+    }
+    // Proxy WebSocket upgrade (auth token injected via proxyReqWs event)
+    proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
+  });
+}
+
+startServer().catch((err) => {
+  console.error("[wrapper] Failed to start:", err);
+  process.exit(1);
 });
 
 process.on("SIGTERM", () => {

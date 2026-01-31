@@ -1,5 +1,5 @@
 {
-  "name": "moltbot-railway-template",
+  "name": "niftybot-railway-template",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,6 +12,7 @@
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "http-proxy": "^1.18.1",
     "tar": "^7.5.4"

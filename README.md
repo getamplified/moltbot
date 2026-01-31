@@ -1,19 +1,19 @@
-# Moltbot Railway Template (1‑click deploy)
+# NiftyBot Railway Template (1‑click deploy)
 
-This repo packages **Moltbot** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
+This repo packages **NiftyBot** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
 
 ## What you get
 
-- **Moltbot Gateway + Control UI** (served at `/` and `/moltbot`)
+- **NiftyBot Gateway + Control UI** (served at `/` and `/moltbot`)
 - A friendly **Setup Wizard** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
  
-## How it wo
+## How it works
 - The container runs a wrapper web server.
-- The wrapper protects `/setup` with `SETUP_PASSWORD`.
-- During setup, the wrapper runs `moltbot onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
-- After setup, **`/` is Moltbot**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
+- **Auto-config**: If `OPENAI_API_KEY` is set in env (or `.env`), the system configures on boot—no `/setup` needed. Optionally set `TELEGRAM_BOT_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` for channels.
+- **Setup wizard**: If not auto-configured, the wrapper protects `/setup` with `SETUP_PASSWORD`. During setup, it runs `moltbot onboard` and configures channels.
+- After setup, **`/` is NiftyBot**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
 
 ## Railway deploy instructions (what you’ll publish as a Template)
 
@@ -25,7 +25,14 @@ In Railway Template Composer:
 
 Required:
 
-- `SETUP_PASSWORD` — user-provided password to access `/setup`
+- `SETUP_PASSWORD` — user-provided password to access `/setup` (or other routes if not auto-configuring)
+
+Auto-config (bypasses /setup):
+
+- `OPENAI_API_KEY` — when set, system configures on boot (OpenAI API key)
+- `TELEGRAM_BOT_TOKEN` — optional, enables Telegram channel
+- `SLACK_BOT_TOKEN` — optional, enables Slack channel
+- `SLACK_APP_TOKEN` — optional, for Slack Socket Mode
 
 Recommended:
 
@@ -38,16 +45,15 @@ Optional:
 
 Notes:
 
-- This template pins Moltbot to a known-good version by default via Docker build arg `MOLTBOT_VERSION`.
+- This template pins the underlying Moltbot to a known-good version by default via Docker build arg `MOLTBOT_GIT_REF`.
 
 4. Enable **Public Networking** (HTTP). Railway will assign a domain.
 5. Deploy.
 
 Then:
 
-- Visit `https://<your-app>.up.railway.app/setup`
-- Complete setup
-- Visit `https://<your-app>.up.railway.app/` and `/moltbot`
+- If you set `OPENAI_API_KEY`: visit `https://<your-app>.up.railway.app/` directly (auto-configured).
+- Otherwise: visit `https://<your-app>.up.railway.app/setup`, complete setup, then visit `/` and `/moltbot`.
 
 ## Getting chat tokens (so you don’t have to scramble)
 
@@ -56,7 +62,7 @@ Then:
 1. Open Telegram and message **@BotFather**
 2. Run `/newbot` and follow the prompts
 3. BotFather will give you a token that looks like: `123456789:AA...`
-4. Paste that token into `/setup`
+4. Set `TELEGRAM_BOT_TOKEN` in your `.env` or Railway variables (or paste into `/setup`)
 
 ### Discord bot token
 
@@ -69,7 +75,7 @@ Then:
 ## Local smoke test
 
 ```bash
-docker build -t moltbot-railway-template .
+docker build -t niftybot-railway-template .
 
 docker run --rm -p 8080:8080 \
   -e PORT=8080 \
@@ -77,7 +83,8 @@ docker run --rm -p 8080:8080 \
   -e MOLTBOT_STATE_DIR=/data/.moltbot \
   -e MOLTBOT_WORKSPACE_DIR=/data/workspace \
   -v $(pwd)/.tmpdata:/data \
-  moltbot-railway-template
+  niftybot-railway-template
 
-# open http://localhost:8080/setup (password: test)
+# With auto-config: add -e OPENAI_API_KEY=sk-... -e TELEGRAM_BOT_TOKEN=...
+# Otherwise: open http://localhost:8080/setup (password: test)
 ```

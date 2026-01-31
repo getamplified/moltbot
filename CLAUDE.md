@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a Railway deployment wrapper for **Moltbot** (an AI coding assistant platform). It provides:
+This is a Railway deployment wrapper for **NiftyBot** (powered by Moltbot, an AI coding assistant platform). It provides:
 
+- **Auto-config from env**: When `OPENAI_API_KEY` is set, the system configures on boot (no `/setup` needed). Also supports `TELEGRAM_BOT_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`.
 - A web-based setup wizard at `/setup` (protected by `SETUP_PASSWORD`)
-- Automatic reverse proxy from public URL → internal Moltbot gateway
+- Automatic reverse proxy from public URL → internal gateway
 - Persistent state via Railway Volume at `/data`
 - One-click backup export of configuration and workspace
 
@@ -33,7 +34,7 @@ npm run smoke
 
 ```bash
 # Build the container (builds Moltbot from source)
-docker build -t moltbot-railway-template .
+docker build -t niftybot-railway-template .
 
 # Run locally with volume
 docker run --rm -p 8080:8080 \
@@ -42,7 +43,7 @@ docker run --rm -p 8080:8080 \
   -e MOLTBOT_STATE_DIR=/data/.moltbot \
   -e MOLTBOT_WORKSPACE_DIR=/data/workspace \
   -v $(pwd)/.tmpdata:/data \
-  moltbot-railway-template
+  niftybot-railway-template
 
 # Access setup wizard
 open http://localhost:8080/setup  # password: test
@@ -81,6 +82,12 @@ open http://localhost:8080/setup  # password: test
 
 **Required:**
 - `SETUP_PASSWORD` — protects `/setup` wizard
+
+**Auto-config (bypasses /setup when set):**
+- `OPENAI_API_KEY` — OpenAI API key; when set, system configures on boot
+- `TELEGRAM_BOT_TOKEN` — optional, enables Telegram channel
+- `SLACK_BOT_TOKEN` — optional, enables Slack channel
+- `SLACK_APP_TOKEN` — optional, for Slack Socket Mode
 
 **Recommended (Railway template defaults):**
 - `MOLTBOT_STATE_DIR=/data/.moltbot` — config + credentials
