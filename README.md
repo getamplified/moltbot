@@ -8,9 +8,8 @@ This repo packages **Moltbot** for Railway with a small **/setup** web wizard so
 - A friendly **Setup Wizard** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
-
-## How it works (high level)
-
+ 
+## How it wo
 - The container runs a wrapper web server.
 - The wrapper protects `/setup` with `SETUP_PASSWORD`.
 - During setup, the wrapper runs `moltbot onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
